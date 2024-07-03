@@ -1,6 +1,5 @@
 # coding:utf-8
 import ctypes
-import time
 
 import wx
 from PIL import Image
@@ -44,16 +43,12 @@ class ImgPanel(wx.Panel):
         self.sizer = wx.BoxSizer(wx.VERTICAL)
 
     def set_img(self, img):
-        # self.clear()
         if hasattr(self, 'static_bitmap'):
             self.static_bitmap.SetBitmap(img)
         else:
             self.static_bitmap = wx.StaticBitmap(self, wx.BITMAP_TYPE_ANY, img)
             self.sizer.Add(self.static_bitmap, 1, wx.EXPAND | wx.ALL, 5)
             self.SetSizer(self.sizer)
-
-        # del self.static_bitmap
-        # self.static_bitmap = static_bitmap
 
     def clear(self):
         if hasattr(self, 'static_bitmap'):
@@ -64,9 +59,7 @@ class ImgPanel(wx.Panel):
 class ImageFrame(wx.Dialog):
     def __init__(self, parent, title):
         super().__init__(parent=parent, title=title, size=(800, 600))
-
         self.img_panel = ImgPanel(self)
-        # self.img_panel.Disable()
         self.img1 = None
         self.img2 = None
         self.mix_img = None
@@ -100,6 +93,9 @@ class ImageFrame(wx.Dialog):
         self.cb_ex = wx.CheckBox(self, wx.ID_ANY, "扩展")
         self.cb_ex.SetValue(True)  # default True
 
+        self.cb_pixel = wx.CheckBox(self, wx.ID_ANY, "逐像素")
+        self.cb_pixel.SetValue(True)  # default True
+
         btn_clear = wx.Button(self, wx.ID_ANY, "清空", size=(100, -1))
         btn_save = wx.Button(self, wx.ID_ANY, "保存", size=(100, -1))
 
@@ -108,6 +104,7 @@ class ImageFrame(wx.Dialog):
         btn_sizer.Add(self.rd_h, 0, wx.ALIGN_CENTER | wx.ALL, 5)
         btn_sizer.Add(self.rd_v, 0, wx.ALIGN_CENTER | wx.ALL, 5)
         btn_sizer.Add((30, -1))
+        btn_sizer.Add(self.cb_pixel, 0, wx.ALIGN_CENTER | wx.ALL, 5)
         btn_sizer.Add(self.cb_ex, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         btn_sizer.Add(btn_clear, 0, wx.ALIGN_CENTER | wx.ALL, 5)
@@ -123,21 +120,34 @@ class ImageFrame(wx.Dialog):
         self.sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
         self.SetSizer(self.sizer)
 
-
         self.btn_import_img1.Bind(wx.EVT_BUTTON, self.OnImport)
         self.btn_import_img2.Bind(wx.EVT_BUTTON, self.OnImport)
 
         self.rd_h.Bind(wx.EVT_RADIOBUTTON, self.OnChangeParam)
         self.rd_v.Bind(wx.EVT_RADIOBUTTON, self.OnChangeParam)
-        self.cb_ex.Bind(wx.EVT_CHECKBOX, self.OnChangeParam)
+        self.cb_ex.Bind(wx.EVT_CHECKBOX, self.OnCheck)
+        self.cb_pixel.Bind(wx.EVT_CHECKBOX, self.OnCheck)
 
         btn_clear.Bind(wx.EVT_BUTTON, self.OnClear)
         btn_save.Bind(wx.EVT_BUTTON, self.OnSave)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
     def OnClose(self, event):
-
         self.Destroy()
+
+    def OnCheck(self, event):
+        en_pixel = self.cb_pixel.GetValue()
+        en_ex = self.cb_ex.GetValue()
+        if en_pixel and en_ex:
+            pass
+        elif not en_ex and not en_pixel:
+            if event.EventObject == self.cb_pixel:
+                self.cb_pixel.SetValue(True)
+                return
+            if event.EventObject == self.cb_ex:
+                self.cb_ex.SetValue(True)
+                return
+        wx.CallAfter(self.OnChangeParam, event)
 
     def OnChangeParam(self, event):
         event.Skip()
@@ -148,17 +158,19 @@ class ImageFrame(wx.Dialog):
         if self.img1 and self.img2:
             direction = DIRECTION_H if self.rd_h.GetValue() else DIRECTION_W
             ex = self.cb_ex.GetValue()
-            mix_img = self.mix_image(self.img1, self.img2, direction, ex)
+            pixel = self.cb_pixel.GetValue()
+            mix_img = self.mix_image(self.img1, self.img2, direction, ex, pixel)
             self.mix_img = mix_img
             w, h = self.img_panel.GetClientSize()
             self.img_panel.set_img(scale_bitmap(pil_to_wxbitmap(mix_img), w, h))
         wx.EndBusyCursor()
 
-    def mix_image(self, img1, img2, direction, ex_flg=True):
+    def mix_image(self, img1, img2, direction, ex_flg=True, pixel=True):
         # direction 0 -- w  1---h
         width, high = img1.size
 
-        if ex_flg:
+        if ex_flg and pixel:
+            # pixel and ex
             new_size = (width * 2, high) if direction == DIRECTION_H else (width, high * 2)
             merged_image = Image.new('RGB', new_size)
             for x in range(width):
@@ -171,9 +183,8 @@ class ImageFrame(wx.Dialog):
                     else:
                         merged_image.putpixel((x * 2, y), pixel1)
                         merged_image.putpixel((x * 2 + 1, y), pixel2)
-        else:
+        elif not ex_flg and pixel:
             merged_image = Image.new('RGB', img1.size)
-
             for x in range(width):
                 for y in range(high):
                     pixel1 = img1.getpixel((x, y))
@@ -188,6 +199,24 @@ class ImageFrame(wx.Dialog):
                             merged_image.putpixel((x, y), pixel1)
                         else:
                             merged_image.putpixel((x, y), pixel2)
+        elif not pixel and ex_flg:
+            new_size = (width * 2, high) if direction == DIRECTION_H else (width, high * 2)
+            merged_image = Image.new('RGB', new_size)
+
+            for x in range(width):
+                for y in range(high):
+                    pixel1 = img1.getpixel((x, y))
+                    pixel2 = img2.getpixel((x, y))
+
+                    if direction == DIRECTION_W:
+                        merged_image.putpixel((x, y), pixel1)
+                        merged_image.putpixel((x, y+high), pixel2)
+                    else:
+                        merged_image.putpixel((x, y), pixel1)
+                        merged_image.putpixel((x+width, y), pixel2)
+        else:
+            # not pixel and not ex_flg ERROR
+            pass
 
         return merged_image
 
